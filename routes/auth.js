@@ -1,110 +1,100 @@
 const express = require('express');
 const { v4: uuidv4 } = require('uuid');
+const { supabase, isConfigured } = require('../config/supabase');
 const router = express.Router();
 
-// In-memory data store (Replace with MongoDB/PostgreSQL connection)
+// Fallback in-memory store
 const users = new Map();
-
-// Default demo user
-users.set('1', {
-  id: '1',
-  fullName: 'Rajesh Patil',
-  phoneNumber: '9876543210',
-  email: 'rajesh@example.com',
-  age: 45,
-  gender: 'Male',
-  bloodGroup: 'O+',
-  chronicConditions: ['Hypertension', 'Diabetes'],
-  createdAt: new Date().toISOString()
-});
 
 /**
  * @route   POST /api/auth/signup
- * @desc    Register a new patient account & primary profile
+ * @desc    Register a new patient account with Email, Password & Health Profile
  */
-router.post('/signup', (req, res) => {
-  const { fullName, phoneNumber, email, age, gender, bloodGroup, chronicConditions } = req.body;
+router.post('/signup', async (req, res) => {
+  const { email, password, fullName, phoneNumber, age, gender, bloodGroup, chronicConditions } = req.body;
 
-  if (!fullName || !phoneNumber) {
-    return res.status(400).json({ success: false, error: 'Full name and phone number are required.' });
+  if (!email || !password || !fullName) {
+    return res.status(400).json({ success: false, error: 'Email, password, and full name are required.' });
   }
 
   const userId = `usr_${uuidv4().substring(0, 8)}`;
   const user = {
     id: userId,
-    fullName,
-    phoneNumber,
-    email: email || '',
-    age: parseInt(age) || 25,
+    email: email.toLowerCase().trim(),
+    password: password, // In production, hash using bcrypt
+    full_name: fullName,
+    phone_number: phoneNumber || '',
+    age: parseInt(age) || 30,
     gender: gender || 'Male',
-    bloodGroup: bloodGroup || 'O+',
-    chronicConditions: Array.isArray(chronicConditions) ? chronicConditions : [],
-    createdAt: new Date().toISOString()
+    blood_group: bloodGroup || 'O+',
+    chronic_conditions: Array.isArray(chronicConditions) ? chronicConditions : []
   };
 
-  users.set(userId, user);
+  if (isConfigured && supabase) {
+    const { data, error } = await supabase.from('users').insert([user]).select().single();
+    if (error) {
+      console.error('Supabase Insert Error:', error);
+      return res.status(500).json({ success: false, error: error.message });
+    }
+    return res.status(201).json({ success: true, message: 'User registered in Supabase PostgreSQL DB.', user: data });
+  }
 
-  res.status(201).json({
-    success: true,
-    message: 'User account created successfully.',
-    user
-  });
+  users.set(email.toLowerCase().trim(), user);
+  res.status(201).json({ success: true, message: 'User account created.', user });
 });
 
 /**
  * @route   POST /api/auth/login
- * @desc    Login user via phone number and OTP
+ * @desc    Login user via Email & Password or Phone Number
  */
-router.post('/login', (req, res) => {
-  const { phoneNumber, otp } = req.body;
+router.post('/login', async (req, res) => {
+  const { email, password, phoneNumber } = req.body;
 
-  if (!phoneNumber) {
-    return res.status(400).json({ success: false, error: 'Phone number is required.' });
+  if (!email && !phoneNumber) {
+    return res.status(400).json({ success: false, error: 'Email or phone number is required.' });
   }
 
-  // Find user by phone number
-  let foundUser = null;
-  for (const user of users.values()) {
-    if (user.phoneNumber === phoneNumber) {
-      foundUser = user;
-      break;
+  if (isConfigured && supabase) {
+    let query = supabase.from('users').select('*');
+    if (email) {
+      query = query.eq('email', email.toLowerCase().trim());
+    } else if (phoneNumber) {
+      query = query.eq('phone_number', phoneNumber);
+    }
+
+    const { data, error } = await query.maybeSingle();
+
+    if (error) {
+      return res.status(500).json({ success: false, error: error.message });
+    }
+
+    if (data) {
+      return res.json({ success: true, message: 'Login successful.', user: data });
+    }
+
+    return res.status(401).json({ success: false, error: 'User account not found. Please sign up first.' });
+  }
+
+  // Fallback memory check
+  const searchKey = email ? email.toLowerCase().trim() : phoneNumber;
+  let foundUser = users.get(searchKey);
+
+  if (!foundUser) {
+    for (const u of users.values()) {
+      if (u.email === searchKey || u.phone_number === searchKey) {
+        foundUser = u;
+        break;
+      }
     }
   }
 
   if (!foundUser) {
-    // Create guest profile if not existing
     const userId = `usr_${uuidv4().substring(0, 8)}`;
-    foundUser = {
-      id: userId,
-      fullName: 'User ' + phoneNumber.slice(-4),
-      phoneNumber,
-      email: '',
-      age: 30,
-      gender: 'Male',
-      bloodGroup: 'O+',
-      chronicConditions: [],
-      createdAt: new Date().toISOString()
-    };
+    foundUser = { id: userId, full_name: 'User', email: email || '', phone_number: phoneNumber || '' };
     users.set(userId, foundUser);
   }
 
-  res.json({
-    success: true,
-    message: 'Login successful.',
-    user: foundUser
-  });
-});
-
-/**
- * @route   GET /api/auth/profile/:id
- * @desc    Get user profile by ID
- */
-router.get('/profile/:id', (req, res) => {
-  const user = users.get(req.params.id);
-  if (!user) {
-    return res.status(404).json({ success: false, error: 'User profile not found.' });
-  }
-  res.json({ success: true, user });
+  res.json({ success: true, message: 'Login successful.', user: foundUser });
 });
 
 module.exports = router;

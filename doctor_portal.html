@@ -1,0 +1,358 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>SwasthAI - Doctor Access & Prescribing Web Portal</title>
+  <!-- Tailwind CSS -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <!-- FontAwesome Icons -->
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&display=swap');
+    body { font-family: 'Inter', sans-serif; }
+  </style>
+</head>
+<body class="bg-slate-900 text-slate-100 min-h-screen pb-16">
+
+  <!-- Navigation Bar -->
+  <nav class="bg-slate-950 border-b border-slate-800 px-6 py-4 sticky top-0 z-50 shadow-xl">
+    <div class="max-w-6xl mx-auto flex items-center justify-between">
+      <div class="flex items-center space-x-3">
+        <div class="w-10 h-10 rounded-xl bg-teal-500 text-slate-950 flex items-center justify-center font-black text-xl shadow-lg shadow-teal-500/30">
+          <i class="fa-solid fa-user-doctor"></i>
+        </div>
+        <div>
+          <span class="text-xl font-black tracking-tight text-white">Swasth<span class="text-teal-400">AI</span></span>
+          <span class="text-xs text-teal-400 font-bold ml-2 bg-teal-950 border border-teal-800 px-2 py-0.5 rounded-full uppercase tracking-wider">Doctor Portal</span>
+        </div>
+      </div>
+      <div class="flex items-center space-x-2 text-xs font-semibold text-slate-400">
+        <span class="w-2.5 h-2.5 rounded-full bg-emerald-500 animate-pulse"></span>
+        <span>Backend API: <strong class="text-emerald-400 font-mono">Render Online</strong></span>
+      </div>
+    </div>
+  </nav>
+
+  <div class="max-w-4xl mx-auto px-4 pt-10">
+
+    <!-- STEP 1: OTP VERIFICATION VIEW -->
+    <div id="verifyView" class="max-w-md mx-auto bg-slate-950 rounded-3xl p-8 border border-slate-800 shadow-2xl space-y-6">
+      <div class="text-center space-y-3">
+        <div class="w-16 h-16 rounded-2xl bg-teal-500/10 border border-teal-500/30 text-teal-400 flex items-center justify-center mx-auto shadow-inner">
+          <i class="fa-solid fa-shield-halved text-2xl"></i>
+        </div>
+        <h2 class="text-2xl font-black text-white">Doctor Medical Access</h2>
+        <p class="text-xs text-slate-400">Enter the 6-digit OTP code provided on the patient's phone screen to unlock medical records & issue prescriptions.</p>
+      </div>
+
+      <!-- Alert Box -->
+      <div id="alertBox" class="hidden text-xs p-4 rounded-2xl font-bold text-center"></div>
+
+      <form id="otpForm" onsubmit="handleVerifyOtp(event)" class="space-y-4">
+        <div>
+          <label class="block text-xs font-bold text-slate-400 uppercase tracking-wider mb-2">Patient 6-Digit Access OTP</label>
+          <input 
+            type="text" 
+            id="otpInput" 
+            maxlength="6" 
+            placeholder="482731" 
+            value="482731"
+            class="w-full px-4 py-3.5 bg-slate-900 border border-slate-800 rounded-2xl font-mono text-center text-2xl font-black text-amber-400 tracking-widest focus:outline-none focus:border-teal-500 transition" 
+            required
+          />
+          <span class="text-[11px] text-slate-500 block text-center mt-1">Default Demo OTPs: <code class="text-teal-400 font-mono">482731</code> or <code class="text-teal-400 font-mono">492810</code></span>
+        </div>
+
+        <button 
+          type="submit" 
+          id="verifyBtn"
+          class="w-full bg-teal-500 hover:bg-teal-400 text-slate-950 font-black py-4 rounded-2xl shadow-lg shadow-teal-500/20 transition flex items-center justify-center space-x-2 text-sm uppercase tracking-wider"
+        >
+          <i class="fa-solid fa-key"></i>
+          <span>Verify OTP & Unlock Patient History</span>
+        </button>
+      </form>
+    </div>
+
+    <!-- STEP 2: DOCTOR CLINICAL DASHBOARD (Hidden until OTP Verified) -->
+    <div id="clinicalView" class="hidden space-y-6">
+
+      <!-- Patient Banner -->
+      <div class="bg-slate-950 p-6 rounded-3xl border border-slate-800 shadow-xl flex flex-col md:flex-row md:items-center justify-between gap-4">
+        <div class="flex items-center space-x-4">
+          <div class="w-14 h-14 rounded-2xl bg-teal-500 text-slate-950 flex items-center justify-center font-black text-2xl">
+            <i class="fa-solid fa-user-injured"></i>
+          </div>
+          <div>
+            <div class="flex items-center space-x-2">
+              <h1 class="text-2xl font-black text-white" id="patientNameDisplay">Sunita Patil</h1>
+              <span class="bg-emerald-500/20 text-emerald-400 text-xs font-bold px-3 py-1 rounded-full border border-emerald-500/30">
+                🔒 Authorized Access
+              </span>
+            </div>
+            <p class="text-xs text-slate-400 font-medium mt-1">
+              Age: <span id="patientAge">41</span> Yrs • Gender: <span id="patientGender">Female</span> • Blood Group: <strong class="text-rose-400" id="patientBlood">B+</strong>
+            </p>
+          </div>
+        </div>
+
+        <button 
+          onclick="location.reload()" 
+          class="bg-slate-900 hover:bg-slate-800 text-slate-300 border border-slate-700 font-bold text-xs px-4 py-2.5 rounded-xl transition flex items-center justify-center space-x-2"
+        >
+          <i class="fa-solid fa-arrow-left"></i>
+          <span>Exit Session</span>
+        </button>
+      </div>
+
+      <!-- AI Clinical Summary -->
+      <div class="bg-gradient-to-r from-purple-950 to-slate-950 border border-purple-900/50 p-6 rounded-3xl shadow-xl space-y-2">
+        <div class="flex items-center space-x-2 text-purple-400 font-bold text-xs uppercase tracking-wider">
+          <i class="fa-solid fa-robot text-amber-400"></i>
+          <span>AI Clinical Summary for Doctor</span>
+        </div>
+        <p class="text-sm font-medium leading-relaxed text-purple-100" id="aiSummaryText">
+          Loading clinical summary...
+        </p>
+      </div>
+
+      <!-- Doctor Prescribe Medicine Form -->
+      <div class="bg-slate-950 p-6 rounded-3xl border border-teal-500/40 shadow-2xl space-y-4">
+        <div class="flex items-center justify-between border-b border-slate-800 pb-3">
+          <div class="flex items-center space-x-2 text-teal-400 font-black text-base">
+            <i class="fa-solid fa-prescription"></i>
+            <h2>Doctor Prescribe Medicine (Pushes to Patient Phone)</h2>
+          </div>
+          <span class="text-xs text-slate-500">Live API Endpoint</span>
+        </div>
+
+        <form id="prescribeForm" onsubmit="handlePrescribe(event)" class="space-y-4">
+          <div>
+            <label class="block text-xs font-bold text-slate-400 uppercase mb-1">Medicine Name & Strength</label>
+            <input 
+              type="text" 
+              id="medName" 
+              placeholder="e.g. Paracetamol 500mg, Amoxicillin" 
+              class="w-full px-4 py-3 bg-slate-900 border border-slate-800 rounded-xl text-sm font-bold text-white focus:outline-none focus:border-teal-500" 
+              required 
+            />
+          </div>
+
+          <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <div>
+              <label class="block text-xs font-bold text-slate-400 uppercase mb-1">Dosage</label>
+              <input 
+                type="text" 
+                id="medDosage" 
+                placeholder="1 tablet" 
+                value="1 tablet"
+                class="w-full px-4 py-3 bg-slate-900 border border-slate-800 rounded-xl text-sm font-bold text-white focus:outline-none focus:border-teal-500" 
+                required 
+              />
+            </div>
+
+            <div>
+              <label class="block text-xs font-bold text-slate-400 uppercase mb-1">Timing</label>
+              <select id="medTiming" class="w-full px-4 py-3 bg-slate-900 border border-slate-800 rounded-xl text-sm font-bold text-white focus:outline-none focus:border-teal-500">
+                <option value="After Breakfast">After Breakfast</option>
+                <option value="Before Breakfast">Before Breakfast</option>
+                <option value="After Lunch" selected>After Lunch</option>
+                <option value="After Dinner">After Dinner</option>
+                <option value="Before Sleep">Before Sleep</option>
+              </select>
+            </div>
+          </div>
+
+          <div>
+            <label class="block text-xs font-bold text-slate-400 uppercase mb-1">Doctor Advice & Instructions</label>
+            <input 
+              type="text" 
+              id="medInstructions" 
+              placeholder="e.g. Take twice daily after food for 5 days" 
+              value="Take twice daily after food for 5 days"
+              class="w-full px-4 py-3 bg-slate-900 border border-slate-800 rounded-xl text-sm font-bold text-white focus:outline-none focus:border-teal-500" 
+            />
+          </div>
+
+          <button 
+            type="submit" 
+            id="prescribeBtn"
+            class="w-full bg-teal-500 hover:bg-teal-400 text-slate-950 font-black py-3.5 rounded-xl shadow-lg shadow-teal-500/20 transition flex items-center justify-center space-x-2 text-sm uppercase tracking-wider"
+          >
+            <i class="fa-solid fa-paper-plane"></i>
+            <span>Issue & Push Prescription to Patient Phone</span>
+          </button>
+        </form>
+      </div>
+
+      <!-- Active Medicines List -->
+      <div class="bg-slate-950 p-6 rounded-3xl border border-slate-800 space-y-4">
+        <h3 class="text-lg font-bold text-white flex items-center space-x-2">
+          <i class="fa-solid fa-pills text-teal-400"></i>
+          <span>Active Patient Medicines</span>
+        </h3>
+        <div id="medicinesContainer" class="space-y-3 text-xs">
+          <!-- Dynamically populated -->
+        </div>
+      </div>
+
+      <!-- Clinical Visits & Medical History -->
+      <div class="bg-slate-950 p-6 rounded-3xl border border-slate-800 space-y-4">
+        <h3 class="text-lg font-bold text-white flex items-center space-x-2">
+          <i class="fa-solid fa-notes-medical text-teal-400"></i>
+          <span>Documented Clinical Visits & Reports</span>
+        </h3>
+        <div id="recordsContainer" class="space-y-3 text-xs">
+          <!-- Dynamically populated -->
+        </div>
+      </div>
+
+    </div>
+  </div>
+
+  <script>
+    const API_BASE = 'https://swasthai-backend-s7md.onrender.com/api/doctor';
+    let currentPatientId = 'fam_2';
+
+    // 1. Verify OTP with Backend Server
+    async function handleVerifyOtp(event) {
+      event.preventDefault();
+      const otp = document.getElementById('otpInput').value.trim();
+      const alertBox = document.getElementById('alertBox');
+      const verifyBtn = document.getElementById('verifyBtn');
+
+      alertBox.className = 'hidden';
+      verifyBtn.disabled = true;
+      verifyBtn.innerHTML = '<i class="fa-solid fa-spinner animate-spin"></i> Verifying with Backend...';
+
+      try {
+        const response = await fetch(`${API_BASE}/verify-otp`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ otp: otp })
+        });
+
+        const data = await response.json();
+
+        if (data.success && data.sharedData) {
+          currentPatientId = data.sharedData.patient.id || 'fam_2';
+          renderClinicalDashboard(data.sharedData);
+          document.getElementById('verifyView').classList.add('hidden');
+          document.getElementById('clinicalView').classList.remove('hidden');
+        } else {
+          showAlert(data.error || 'Verification failed. Please check OTP.', 'bg-rose-950 text-rose-300 border-rose-800');
+        }
+      } catch (err) {
+        showAlert('Error connecting to backend server. Please try again.', 'bg-rose-950 text-rose-300 border-rose-800');
+      } finally {
+        verifyBtn.disabled = false;
+        verifyBtn.innerHTML = '<i class="fa-solid fa-key"></i> Verify OTP & Unlock Patient History';
+      }
+    }
+
+    // 2. Render Clinical Dashboard
+    function renderClinicalDashboard(sharedData) {
+      document.getElementById('patientNameDisplay').innerText = sharedData.patient.name;
+      document.getElementById('patientAge').innerText = sharedData.patient.age || '41';
+      document.getElementById('patientGender').innerText = sharedData.patient.gender || 'Female';
+      document.getElementById('patientBlood').innerText = sharedData.patient.bloodGroup || 'B+';
+      document.getElementById('aiSummaryText').innerText = sharedData.aiSummary;
+
+      // Render Medicines
+      const medBox = document.getElementById('medicinesContainer');
+      if (sharedData.medicines && sharedData.medicines.length > 0) {
+        medBox.innerHTML = sharedData.medicines.map(m => `
+          <div class="p-4 bg-slate-900 rounded-2xl border border-slate-800 flex justify-between items-center">
+            <div>
+              <span class="font-bold text-white text-sm block">${m.name}</span>
+              <span class="text-slate-400">${m.dosage} • ${m.timing} (${m.instructions || ''})</span>
+            </div>
+            <span class="bg-teal-950 text-teal-400 border border-teal-800 text-[10px] font-bold px-2.5 py-1 rounded-full">Prescribed</span>
+          </div>
+        `).join('');
+      } else {
+        medBox.innerHTML = '<p class="text-slate-500">No active medicines found.</p>';
+      }
+
+      // Render Records
+      const recBox = document.getElementById('recordsContainer');
+      if (sharedData.records && sharedData.records.length > 0) {
+        recBox.innerHTML = sharedData.records.map(r => `
+          <div class="p-4 bg-slate-900 rounded-2xl border border-slate-800 space-y-1">
+            <div class="flex justify-between font-bold text-white">
+              <span>${r.title}</span>
+              <span class="text-slate-400 font-mono text-[11px]">${r.date}</span>
+            </div>
+            <p class="text-slate-400">${r.details}</p>
+          </div>
+        `).join('');
+      } else {
+        recBox.innerHTML = '<p class="text-slate-500">No medical records uploaded.</p>';
+      }
+    }
+
+    // 3. Post Prescription to Backend Server
+    async function handlePrescribe(event) {
+      event.preventDefault();
+      const medName = document.getElementById('medName').value.trim();
+      const dosage = document.getElementById('medDosage').value.trim();
+      const timing = document.getElementById('medTiming').value;
+      const instructions = document.getElementById('medInstructions').value.trim();
+      const prescribeBtn = document.getElementById('prescribeBtn');
+
+      prescribeBtn.disabled = true;
+      prescribeBtn.innerHTML = '<i class="fa-solid fa-spinner animate-spin"></i> Pushing to Patient Account...';
+
+      try {
+        const response = await fetch(`${API_BASE}/prescribe`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            patientId: currentPatientId,
+            medicineName: medName,
+            dosage: dosage,
+            timing: timing,
+            instructions: instructions,
+            doctorName: 'Dr. Deshmukh (MD)'
+          })
+        });
+
+        const data = await response.json();
+
+        if (data.success && data.prescription) {
+          alert(`💊 Prescription for "${medName}" successfully pushed to patient's phone!`);
+          document.getElementById('medName').value = '';
+
+          // Add to UI list dynamically
+          const medBox = document.getElementById('medicinesContainer');
+          const newHtml = `
+            <div class="p-4 bg-teal-950/40 rounded-2xl border border-teal-500/40 flex justify-between items-center animate-bounce">
+              <div>
+                <span class="font-bold text-teal-300 text-sm block">${data.prescription.name}</span>
+                <span class="text-slate-300">${data.prescription.dosage} • ${data.prescription.timing} (${data.prescription.instructions})</span>
+              </div>
+              <span class="bg-teal-500 text-slate-950 font-black text-[10px] px-2.5 py-1 rounded-full uppercase">Just Prescribed</span>
+            </div>
+          `;
+          medBox.innerHTML = newHtml + medBox.innerHTML;
+        } else {
+          alert('Failed to push prescription: ' + (data.error || 'Unknown error'));
+        }
+      } catch (err) {
+        alert('Connection error to backend server.');
+      } finally {
+        prescribeBtn.disabled = false;
+        prescribeBtn.innerHTML = '<i class="fa-solid fa-paper-plane"></i> Issue & Push Prescription to Patient Phone';
+      }
+    }
+
+    function showAlert(msg, colorClass) {
+      const box = document.getElementById('alertBox');
+      box.innerText = msg;
+      box.className = `p-4 rounded-2xl font-bold text-center border text-xs ${colorClass}`;
+    }
+  </script>
+
+</body>
+</html>

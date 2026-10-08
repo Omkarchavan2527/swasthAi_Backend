@@ -1,93 +1,62 @@
-# 🚀 SwasthAI Backend REST API Server
+# 🚀 SwasthAI Backend REST API Server (with Supabase PostgreSQL & Storage)
 
-A lightweight, high-performance Node.js & Express REST API server for **SwasthAI** handling User Registration/Auth, Family Member Sync, Doctor OTP Access Verification, and Doctor Web Portal Prescribing.
+A high-performance Node.js & Express REST API server for **SwasthAI** integrated with **Supabase Cloud PostgreSQL Database** & **Supabase Storage** for persistent data and medical file storage.
 
 ---
 
-## 📁 Backend Directory Structure
+## 🗄️ Supabase PostgreSQL Setup Guide
 
-```
-swasthai_backend/
-├── package.json
-├── server.js               # Main Express Server Entry
-├── routes/
-│   ├── auth.js             # User Signup, Login & Health Profile APIs
-│   ├── family.js           # Family Member Sync & CRUD APIs
-│   └── doctor.js           # Doctor OTP Access & Web Portal Prescribing APIs
-└── README.md               # API Documentation & Deployment Guide
+### **Step 1: Get Supabase Credentials**
+1. Log in to [supabase.com](https://supabase.com) and create a free project.
+2. Go to **Project Settings** -> **API**.
+3. Copy **Project URL** (`SUPABASE_URL`) and **anon / service_role API Key** (`SUPABASE_KEY`).
+
+### **Step 2: Run Database & Storage Setup Script**
+1. In your Supabase Dashboard, go to **SQL Editor**.
+2. Open the [schema.sql](file:///c:/Users/admin/OneDrive/Desktop/swasthai_backend/schema.sql) file.
+3. Paste and run the script. This creates:
+   - `users` table
+   - `family_members` table
+   - `doctor_sessions` table
+   - `prescriptions` table
+   - `medical_records` table
+   - `medical_records` Supabase Storage bucket for X-Rays, MRIs, and PDF reports.
+
+### **Step 3: Add Environment Variables in Render.com**
+On your Render Dashboard (Web Service -> Environment):
+```env
+SUPABASE_URL=https://your-project.supabase.co
+SUPABASE_KEY=eyJhY...your-supabase-key
 ```
 
 ---
 
 ## 🌐 Complete REST API Endpoint Reference
 
-### 1. **Authentication & Profile APIs**
-- **`POST /api/auth/signup`**
-  - **Body**: `{ "fullName": "Rajesh Patil", "phoneNumber": "9876543210", "email": "rajesh@example.com", "age": 45, "gender": "Male", "bloodGroup": "O+", "chronicConditions": ["Hypertension"] }`
-  - **Description**: Registers new user and initializes primary health profile.
-- **`POST /api/auth/login`**
-  - **Body**: `{ "phoneNumber": "9876543210", "otp": "123456" }`
-  - **Description**: Authenticates user via phone & OTP.
-- **`GET /api/auth/profile/:id`**
-  - **Description**: Retrieves patient user profile details.
+### 1. **Authentication & Profile APIs** ([routes/auth.js](file:///c:/Users/admin/OneDrive/Desktop/swasthai_backend/routes/auth.js))
+- **`POST /api/auth/signup`**: Registers patient in Supabase `users` table.
+- **`POST /api/auth/login`**: Authenticates user via phone & OTP.
 
-### 2. **Family Member Sync APIs**
-- **`GET /api/family/:userId`**
-  - **Description**: Returns all family members for a specific patient.
-- **`POST /api/family/add`**
-  - **Body**: `{ "userId": "1", "name": "Sunita Patil", "age": 41, "gender": "Female", "relationship": "Spouse", "bloodGroup": "B+" }`
-  - **Description**: Adds a new family member profile.
-- **`DELETE /api/family/:userId/:memberId`**
-  - **Description**: Deletes a family member profile.
+### 2. **Family Member Sync APIs** ([routes/family.js](file:///c:/Users/admin/OneDrive/Desktop/swasthai_backend/routes/family.js))
+- **`GET /api/family/:userId`**: Returns family members from Supabase `family_members` table.
+- **`POST /api/family/add`**: Inserts a new family member.
 
-### 3. **Doctor Web Portal & Prescribing APIs**
-- **`POST /api/doctor/generate-otp`**
-  - **Body**: `{ "userId": "1", "patientName": "Rajesh Patil", "durationMinutes": 60 }`
-  - **Description**: Patient app generates a 6-digit access OTP with expiration timestamp.
-- **`POST /api/doctor/verify-otp`**
-  - **Body**: `{ "otp": "492810" }`
-  - **Description**: Doctor Web Portal enters 6-digit OTP to unlock patient medical records.
-- **`POST /api/doctor/prescribe`**
-  - **Body**: `{ "userId": "1", "medicineName": "Amoxicillin", "dosage": "500mg", "timing": "After Lunch", "frequency": "Daily", "instructions": "Take twice daily after food", "doctorName": "Dr. Patil (MD)" }`
-  - **Description**: Doctor prescribes new medicine directly into patient profile.
-- **`GET /api/doctor/prescriptions/:userId`**
-  - **Description**: Retrieves active prescriptions for patient.
+### 3. **Doctor Web Portal & Prescribing APIs** ([routes/doctor.js](file:///c:/Users/admin/OneDrive/Desktop/swasthai_backend/routes/doctor.js))
+- **`POST /api/doctor/create-session`**: Generates 6-digit access OTP & token in Supabase `doctor_sessions` table.
+- **`POST /api/doctor/verify-otp`**: Doctor Web Portal verifies OTP and unlocks patient history & AI summary.
+- **`POST /api/doctor/prescribe`**: Doctor posts a new prescription directly to Supabase `prescriptions` table.
+
+### 4. **Medical Records & Cloud File Upload APIs** ([routes/records.js](file:///c:/Users/admin/OneDrive/Desktop/swasthai_backend/routes/records.js))
+- **`POST /api/records/upload`**: Uploads X-Ray / MRI / PDF report file to **Supabase Storage** bucket `medical_records` and saves metadata to Supabase `medical_records` table.
+- **`GET /api/records/:patientId`**: Retrieves all medical records for a patient.
 
 ---
 
-## 🛠️ How to Run Locally
+## 🛠️ Local Development
 
 ```bash
-# 1. Navigate to backend directory
 cd c:\Users\admin\OneDrive\Desktop\swasthai_backend
-
-# 2. Install dependencies
 npm install
-
-# 3. Start backend server
 npm start
 ```
-Server runs on **`http://localhost:5000`**. Test health endpoint at **`http://localhost:5000/api/health`**.
-
----
-
-## ☁️ How to Deploy to Free Cloud Servers
-
-### **Option A: Render.com (Recommended Free Hosting)**
-1. Create a free account at [render.com](https://render.com).
-2. Click **New +** -> **Web Service** -> Connect your GitHub repository containing `swasthai_backend`.
-3. Set **Start Command**: `node server.js`.
-4. Render will generate a free HTTPS API URL: `https://swasthai-backend.onrender.com`.
-
-### **Option B: Vercel**
-1. Install Vercel CLI: `npm i -g vercel`.
-2. Inside `swasthai_backend/`, run: `vercel`.
-
----
-
-## 📱 Connecting Server API URL to Flutter App
-
-In `swasthai_flutter/lib/services/cloud_sync_service.dart`, set your deployed API URL:
-```dart
-const String backendApiUrl = 'https://swasthai-backend.onrender.com/api';
-```
+Server runs on **`http://localhost:5000`**.
