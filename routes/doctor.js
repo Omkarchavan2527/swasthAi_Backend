@@ -357,39 +357,103 @@ router.post('/prescribe', async (req, res) => {
   const prescriptionId = `med_${uuidv4().substring(0, 8)}`;
   const dateStr = new Date().toISOString().substring(0, 10);
 
+  // Map timing string to standard HH:MM
+  let schedTime = '13:00';
+  if (timing === 'Before Breakfast') schedTime = '07:30';
+  else if (timing === 'After Breakfast') schedTime = '08:00';
+  else if (timing === 'After Lunch') schedTime = '13:00';
+  else if (timing === 'After Dinner') schedTime = '20:00';
+  else if (timing && timing.includes(':')) schedTime = timing.trim();
+
+  let actualUserId = patientId;
+
+  // Resolve actual user_id from family_members or users
+  if (isConfigured && supabase) {
+    try {
+      const { data: member } = await supabase
+        .from('family_members')
+        .select('user_id')
+        .eq('id', patientId)
+        .maybeSingle();
+
+      if (member && member.user_id) {
+        actualUserId = member.user_id;
+      } else {
+        const { data: user } = await supabase
+          .from('users')
+          .select('id')
+          .eq('id', patientId)
+          .maybeSingle();
+        if (user && user.id) actualUserId = user.id;
+      }
+    } catch (e) {
+      console.warn('Error resolving patient user_id:', e.message);
+    }
+  }
+
   const newMed = {
     id: prescriptionId,
     profile_id: patientId,
-    user_id: 'usr_doctor',
+    user_id: actualUserId,
     name: medicineName.trim(),
     dosage: dosage || '1 tablet',
     frequency: frequency || 'Daily',
-    scheduled_times: [timing === 'Before Breakfast' ? '07:30' : (timing === 'After Lunch' ? '13:00' : '20:00')],
+    scheduled_times: [schedTime],
     start_date: dateStr,
+    end_date: null,
     instructions: instructions || 'Prescribed via Doctor Web Portal',
-    prescribed_by: doctorName || 'Dr. Deshmukh',
+    reminder_enabled: true,
+    reminder_before_minutes: 15,
+    grace_period_minutes: 15,
+    prescribed_by: doctorName || 'Dr. Deshmukh (MD)',
+    created_at: new Date().toISOString()
+  };
+
+  // Generate today's scheduled dose
+  const [hh, mm] = schedTime.split(':').map(Number);
+  const scheduledDt = new Date();
+  scheduledDt.setHours(hh || 13, mm || 0, 0, 0);
+
+  const remDt = new Date(scheduledDt.getTime() - 15 * 60000);
+  const escDt = new Date(scheduledDt.getTime() + 15 * 60000);
+  const doseId = `dose_${prescriptionId}_${dateStr}_${schedTime.replace(':', '')}`;
+
+  const doseRecord = {
+    id: doseId,
+    medicine_id: prescriptionId,
+    profile_id: patientId,
+    user_id: actualUserId,
+    scheduled_date: dateStr,
+    scheduled_time: schedTime,
+    scheduled_datetime: scheduledDt.toISOString(),
+    reminder_datetime: remDt.toISOString(),
+    escalation_datetime: escDt.toISOString(),
+    status: 'Pending',
+    taken_at: null,
+    escalated: false,
+    escalated_at: null,
     created_at: new Date().toISOString()
   };
 
   if (isConfigured && supabase) {
-    await supabase.from('medicines').insert([newMed]);
-    await supabase.from('prescriptions').insert([{
-      id: prescriptionId,
-      patient_id: patientId,
-      name: medicineName,
-      dosage: dosage || '1 tablet',
-      timing: timing || 'After Food',
-      frequency: frequency || 'Daily',
-      instructions: instructions || '',
-      prescribed_by: doctorName || 'Doctor Portal',
-      date: dateStr
-    }]);
+    try {
+      const { error: medErr } = await supabase.from('medicines').insert([newMed]);
+      if (medErr) {
+        console.error('Supabase Medicine Insert Error:', medErr);
+        return res.status(500).json({ success: false, error: medErr.message });
+      }
+
+      await supabase.from('scheduled_doses').insert([doseRecord]);
+    } catch (err) {
+      console.error('Supabase Prescribe Exception:', err);
+      return res.status(500).json({ success: false, error: err.message });
+    }
   }
 
   await logAuditEvent({
     profileId: patientId,
     eventType: 'PRESCRIPTION_ADDED',
-    details: `Doctor issued prescription: ${medicineName} (${dosage}).`,
+    details: `Doctor issued prescription: ${medicineName} (${dosage || '1 tablet'}) scheduled at ${schedTime}.`,
     ipAddress: req.ip
   });
 
@@ -398,11 +462,15 @@ router.post('/prescribe', async (req, res) => {
     message: `Prescription for "${medicineName}" successfully pushed to patient profile.`,
     prescription: {
       id: prescriptionId,
+      profileId: patientId,
       name: medicineName,
       dosage: dosage || '1 tablet',
-      timing,
-      instructions
-    }
+      timing: schedTime,
+      scheduledTimes: [schedTime],
+      instructions: instructions || 'Prescribed via Doctor Web Portal',
+      prescribedBy: doctorName || 'Dr. Deshmukh (MD)'
+    },
+    dose: doseRecord
   });
 });
 

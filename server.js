@@ -55,7 +55,7 @@ function startCaretakerEscalationJob() {
       // Find doses where status is not 'Taken', escalated is false, and grace period (escalation_datetime) has elapsed
       const { data: overdueDoses, error } = await supabase
         .from('scheduled_doses')
-        .select('*, family_members!scheduled_doses_profile_id_fkey(name, caretaker_id), medicines(name)')
+        .select('*')
         .neq('status', 'Taken')
         .eq('escalated', false)
         .lte('escalation_datetime', now.toISOString());
@@ -72,15 +72,28 @@ function startCaretakerEscalationJob() {
 
         if (recheck && recheck.status === 'Taken') continue; // User took medicine just before job execution!
 
-        const profile = dose.family_members;
+        // Get patient profile & caretaker
+        const { data: profile } = await supabase
+          .from('family_members')
+          .select('name, caretaker_id')
+          .eq('id', dose.profile_id)
+          .maybeSingle();
+
         if (!profile || !profile.caretaker_id) continue; // No assigned caretaker
 
+        // Get medicine name
+        const { data: med } = await supabase
+          .from('medicines')
+          .select('name')
+          .eq('id', dose.medicine_id)
+          .maybeSingle();
+
         const patientName = profile.name || 'Patient';
-        const medicineName = dose.medicines ? dose.medicines.name : 'Scheduled Medicine';
+        const medicineName = med ? med.name : 'Scheduled Medicine';
         const scheduledTime = dose.scheduled_time || '08:00';
         const caretakerProfileId = profile.caretaker_id;
 
-        const notifMessage = `${patientName} has not confirmed taking ${medicineName}, scheduled for ${scheduledTime}.`;
+        const notifMessage = `🚨 ${patientName} has not confirmed taking ${medicineName}, scheduled for ${scheduledTime}.`;
 
         // Mark dose as escalated & Missed
         await supabase
