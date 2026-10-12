@@ -79,15 +79,19 @@ router.get('/:profileId', async (req, res) => {
   const { profileId } = req.params;
 
   if (isConfigured && supabase) {
-    const { data, error } = await supabase
-      .from('medicines')
-      .select('*')
-      .eq('profile_id', profileId)
-      .order('created_at', { ascending: false });
+    try {
+      const { data, error } = await supabase
+        .from('medicines')
+        .select('*')
+        .or(`profile_id.eq.${profileId},user_id.eq.${profileId}`)
+        .order('created_at', { ascending: false });
 
-    if (!error && data) {
-      const formatted = data.map(formatMedicine);
-      return res.json({ success: true, count: formatted.length, medicines: formatted });
+      if (!error && data) {
+        const formatted = data.map(formatMedicine);
+        return res.json({ success: true, count: formatted.length, medicines: formatted });
+      }
+    } catch (e) {
+      console.warn('Supabase medicines query warning:', e.message);
     }
   }
 
@@ -124,10 +128,73 @@ router.post('/add', async (req, res) => {
   const medicineId = `med_${uuidv4().substring(0, 8)}`;
   const cleanTimes = Array.isArray(scheduledTimes) && scheduledTimes.length > 0 ? scheduledTimes : ['08:00'];
 
+  let actualUserId = userId || 'usr_default';
+
+  // Resolve actual user_id from database if possible
+  if (isConfigured && supabase) {
+    try {
+      // 1. Check if profileId is already in family_members
+      const { data: member } = await supabase
+        .from('family_members')
+        .select('id, user_id')
+        .eq('id', profileId)
+        .maybeSingle();
+
+      if (member && member.user_id) {
+        actualUserId = member.user_id;
+      } else {
+        // 2. Check if profileId is directly a user in users table
+        const { data: user } = await supabase
+          .from('users')
+          .select('id, full_name, age, gender, blood_group, chronic_conditions')
+          .eq('id', profileId)
+          .maybeSingle();
+
+        if (user && user.id) {
+          actualUserId = user.id;
+          // Ensure family_members has a self record for this user
+          await supabase.from('family_members').upsert([{
+            id: user.id,
+            user_id: user.id,
+            name: user.full_name || 'Primary Patient',
+            relationship: 'Self',
+            age: user.age || 30,
+            gender: user.gender || 'Male',
+            blood_group: user.blood_group || 'O+',
+            chronic_conditions: user.chronic_conditions || []
+          }]);
+        } else if (userId) {
+          // Check if userId is valid in users
+          const { data: uCheck } = await supabase
+            .from('users')
+            .select('id')
+            .eq('id', userId)
+            .maybeSingle();
+
+          if (uCheck && uCheck.id) {
+            actualUserId = uCheck.id;
+            // Ensure family_members has an entry for profileId
+            await supabase.from('family_members').upsert([{
+              id: profileId,
+              user_id: actualUserId,
+              name: 'Family Member',
+              relationship: 'Family',
+              age: 25,
+              gender: 'Other',
+              blood_group: 'O+'
+            }]);
+          }
+        }
+      }
+    } catch (e) {
+      console.warn('Foreign key pre-check warning in medicines add:', e.message);
+    }
+  }
+
   const newMed = {
     id: medicineId,
     profile_id: profileId,
-    user_id: userId || 'usr_default',
+    user_id: actualUserId,
     name: name.trim(),
     dosage: dosage || '1 tablet',
     frequency: frequency || 'Daily',
@@ -146,26 +213,32 @@ router.post('/add', async (req, res) => {
   const newDoses = generateDosesForToday(formattedMed);
 
   if (isConfigured && supabase) {
-    const { data: medData, error: medErr } = await supabase
-      .from('medicines')
-      .insert([newMed])
-      .select()
-      .single();
+    try {
+      const { data: medData, error: medErr } = await supabase
+        .from('medicines')
+        .insert([newMed])
+        .select()
+        .single();
 
-    if (medErr) {
-      return res.status(500).json({ success: false, error: medErr.message });
+      if (!medErr && medData) {
+        if (newDoses.length > 0) {
+          await supabase.from('scheduled_doses').insert(newDoses);
+        }
+
+        return res.status(201).json({
+          success: true,
+          message: 'Medicine and scheduled doses created.',
+          medicine: formatMedicine(medData),
+          doses: newDoses
+        });
+      }
+
+      if (medErr) {
+        console.warn('Supabase Medicine Insert Error:', medErr.message);
+      }
+    } catch (dbEx) {
+      console.warn('Supabase Medicine Insert Exception:', dbEx.message);
     }
-
-    if (newDoses.length > 0) {
-      await supabase.from('scheduled_doses').insert(newDoses);
-    }
-
-    return res.status(201).json({
-      success: true,
-      message: 'Medicine and scheduled doses created.',
-      medicine: formatMedicine(medData),
-      doses: newDoses
-    });
   }
 
   // Memory fallback
@@ -202,7 +275,7 @@ router.get('/doses/:profileId', async (req, res) => {
       .eq('scheduled_date', todayStr)
       .order('scheduled_time', { ascending: true });
 
-    if (!error && doses) {
+    if (!error && doses && doses.length > 0) {
       // Dynamic status recalculation
       const evaluated = doses.map(d => {
         let currentStatus = d.status;
@@ -221,11 +294,56 @@ router.get('/doses/:profileId', async (req, res) => {
       });
       return res.json({ success: true, count: evaluated.length, doses: evaluated });
     }
+
+    // Auto-generate today's doses from active medicines if not yet generated
+    try {
+      const { data: profileMeds } = await supabase
+        .from('medicines')
+        .select('*')
+        .or(`profile_id.eq.${profileId},user_id.eq.${profileId}`);
+
+      if (profileMeds && profileMeds.length > 0) {
+        let allGenerated = [];
+        for (const med of profileMeds) {
+          const gen = generateDosesForToday(formatMedicine(med));
+          allGenerated.push(...gen);
+        }
+        if (allGenerated.length > 0) {
+          try {
+            await supabase.from('scheduled_doses').insert(allGenerated);
+          } catch (_) {}
+
+          return res.json({
+            success: true,
+            count: allGenerated.length,
+            doses: allGenerated.map(d => ({
+              ...d,
+              medicines: {
+                name: d.medicine_name,
+                dosage: d.dosage,
+                instructions: d.instructions,
+                reminder_before_minutes: 15,
+                grace_period_minutes: 15
+              }
+            }))
+          });
+        }
+      }
+    } catch (_) {}
   }
 
   // Fallback memory check
   const doses = scheduledDosesStore.get(profileId) || [];
-  const todayDoses = doses.filter(d => d.scheduled_date === todayStr);
+  let todayDoses = doses.filter(d => d.scheduled_date === todayStr);
+
+  if (todayDoses.length === 0) {
+    const medMap = medicinesStore.get(profileId) || new Map();
+    for (const med of medMap.values()) {
+      const gen = generateDosesForToday(formatMedicine(med));
+      todayDoses.push(...gen);
+    }
+    scheduledDosesStore.set(profileId, todayDoses);
+  }
 
   const evaluated = todayDoses.map(d => {
     let currentStatus = d.status;
