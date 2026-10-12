@@ -207,4 +207,109 @@ router.post('/login', async (req, res) => {
   });
 });
 
+/**
+ * @route   POST /api/auth/family-login
+ * @desc    Authenticate a family member on their mobile device using unique Family Access Code or phone
+ */
+router.post('/family-login', async (req, res) => {
+  const { accessCode, phone } = req.body;
+
+  if (!accessCode && !phone) {
+    return res.status(400).json({
+      success: false,
+      error: 'Please enter your Family Access Code (e.g. FAM-A1B2C3) or registered phone number.'
+    });
+  }
+
+  const rawCode = (accessCode || '').trim();
+  const cleanCode = rawCode.replace(/^FAM-/i, '').toLowerCase();
+  const cleanPhone = (phone || '').trim();
+
+  let matchedMember = null;
+  let primaryAccount = null;
+
+  // 1. Search in Supabase Cloud PostgreSQL
+  if (isConfigured && supabase) {
+    try {
+      if (cleanCode && cleanCode.length >= 4) {
+        // Query by id fragment (e.g. mem_3a4b5c or usr_...)
+        const { data: members, error } = await supabase
+          .from('family_members')
+          .select('*')
+          .ilike('id', `%${cleanCode}%`)
+          .limit(5);
+
+        if (!error && members && members.length > 0) {
+          matchedMember = members[0];
+        }
+      }
+
+      if (!matchedMember && cleanPhone) {
+        const { data: phoneMembers, error: phoneErr } = await supabase
+          .from('family_members')
+          .select('*')
+          .eq('phone', cleanPhone)
+          .limit(1);
+
+        if (!phoneErr && phoneMembers && phoneMembers.length > 0) {
+          matchedMember = phoneMembers[0];
+        }
+      }
+
+      if (matchedMember && matchedMember.user_id) {
+        const { data: userRecord } = await supabase
+          .from('users')
+          .select('id, full_name, email, phone_number')
+          .eq('id', matchedMember.user_id)
+          .maybeSingle();
+
+        if (userRecord) {
+          primaryAccount = userRecord;
+        }
+      }
+    } catch (e) {
+      console.warn('Supabase family-login search warning:', e.message);
+    }
+  }
+
+  // 2. Fallback memory store search
+  if (!matchedMember) {
+    const familyRouter = require('./family');
+    const store = familyRouter.familyMembersStore;
+    if (store) {
+      for (const [uid, uMap] of store.entries()) {
+        for (const [mId, m] of uMap.entries()) {
+          const mCode = (mId || '').replace(/^(mem_|usr_)/, '').toLowerCase();
+          if ((cleanCode && mCode.includes(cleanCode)) || (cleanPhone && m.phone === cleanPhone)) {
+            matchedMember = m;
+            primaryAccount = { id: uid, full_name: 'Primary Family Account' };
+            break;
+          }
+        }
+        if (matchedMember) break;
+      }
+    }
+  }
+
+  if (!matchedMember) {
+    return res.status(404).json({
+      success: false,
+      error: 'Invalid Family Access Code. Please ask the family account owner to share the 6-character code from their Family Member screen.'
+    });
+  }
+
+  const familyRouter = require('./family');
+  const formatted = familyRouter.formatMember ? familyRouter.formatMember(matchedMember) : matchedMember;
+
+  res.json({
+    success: true,
+    message: `Welcome, ${matchedMember.name}! Family member profile verified.`,
+    member: formatted,
+    user: primaryAccount || {
+      id: matchedMember.user_id,
+      full_name: 'Family Account Owner'
+    }
+  });
+});
+
 module.exports = router;

@@ -112,31 +112,48 @@ router.post('/add', async (req, res) => {
  */
 router.post('/upload', upload.single('file'), async (req, res) => {
   try {
-    const { patientId, title, type, date, details, doctorName, hospitalName } = req.body;
+    const patientId = req.body.patientId || req.body.memberId;
+    const { title, type, date, details, doctorName, hospitalName } = req.body;
     const file = req.file;
 
     if (!patientId || !title) {
       return res.status(400).json({ success: false, error: 'patientId and title are required.' });
     }
 
-    let fileUrl = null;
+    let fileUrl = req.body.fileUrl || null;
 
     // Upload to Supabase Storage Bucket 'medical_records' if file provided
     if (file && isConfigured && supabase) {
       try {
-        const fileExt = file.originalname.split('.').pop();
-        const filePath = `patient_${patientId}/${Date.now()}_${uuidv4().substring(0, 6)}.${fileExt}`;
+        const fileExt = file.originalname ? file.originalname.split('.').pop() : (file.mimetype && file.mimetype.includes('pdf') ? 'pdf' : 'jpg');
+        const cleanExt = (fileExt || 'jpg').toLowerCase();
+        const filePath = `patient_${patientId}/${Date.now()}_${uuidv4().substring(0, 6)}.${cleanExt}`;
 
-        const { error: uploadErr } = await supabase.storage
+        let { error: uploadErr } = await supabase.storage
           .from('medical_records')
           .upload(filePath, file.buffer, {
-            contentType: file.mimetype,
+            contentType: file.mimetype || (cleanExt === 'pdf' ? 'application/pdf' : 'image/jpeg'),
             upsert: true
           });
+
+        if (uploadErr && uploadErr.message && uploadErr.message.toLowerCase().includes('not found')) {
+          try {
+            await supabase.storage.createBucket('medical_records', { public: true });
+            const retry = await supabase.storage
+              .from('medical_records')
+              .upload(filePath, file.buffer, {
+                contentType: file.mimetype || 'application/octet-stream',
+                upsert: true
+              });
+            uploadErr = retry.error;
+          } catch (_) {}
+        }
 
         if (!uploadErr) {
           const { data: publicUrlData } = supabase.storage.from('medical_records').getPublicUrl(filePath);
           fileUrl = publicUrlData?.publicUrl;
+        } else {
+          console.warn('Supabase Storage Upload Warning:', uploadErr.message);
         }
       } catch (storageErr) {
         console.warn('Supabase Storage Upload Exception:', storageErr.message);

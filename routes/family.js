@@ -7,11 +7,21 @@ const router = express.Router();
 const familyMembersStore = new Map();
 
 /**
+ * Compute deterministic 6-character Family Member Access Code
+ */
+function getAccessCode(id) {
+  if (!id) return 'FAM-000000';
+  const clean = id.replace(/^(mem_|usr_)/, '').replace(/[^a-zA-Z0-9]/g, '').toUpperCase();
+  return 'FAM-' + (clean.length >= 6 ? clean.substring(0, 6) : clean.padEnd(6, 'X'));
+}
+
+/**
  * Helper to normalize family member object
  */
 function formatMember(m) {
   return {
     id: m.id,
+    accessCode: getAccessCode(m.id),
     userId: m.user_id || m.userId,
     name: m.name,
     age: parseInt(m.age) || 25,
@@ -269,5 +279,9 @@ router.delete('/:userId/:memberId', async (req, res) => {
 
   res.json({ success: true, message: 'Family member profile deleted.' });
 });
+
+router.formatMember = formatMember;
+router.getAccessCode = getAccessCode;
+router.familyMembersStore = familyMembersStore;
 
 module.exports = router;
